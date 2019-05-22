@@ -1,0 +1,131 @@
+Video games are something I find a lot of enjoyment in, and I think that many CSmajors share the same idea.  For my final project, I thought it would be fun to try and figure out what factors play a role in becoming a "best-selling" videogame.  In fact, I hypothesize that the platform a video game is releaed on will have a direct effect on the sales of that game!  To test this, let's first load up the tidyverse library, which will help us with our analysis.  
+
+We will be scraping data from a Wikipedia article titled "List of best-selling video games", which provides us with a great table that we can use to kick things off with our analysis.
+
+```{r}
+library(tidyverse)
+library(rvest)
+```
+
+Now that we've got the libraries covered, we also set up a database so that we can store the information we scraoe from the Wikipedia article later.  Now, it's time to actually get that information from our Wikipedia URL.
+
+```{r}
+url <- "https://en.wikipedia.org/wiki/List_of_best-selling_video_games"
+vg_table <- url %>%
+  read_html() %>%
+  html_node(".wikitable")%>%
+  html_table()
+```
+
+Now that we.ve got the data, let's clean it up a bit.  We can remove the Ref column from the dataset because we wont be using it.
+
+```{r}
+vg_table$Ref. <- NULL
+```
+
+
+Some of our entries in the "Initial Release Date" column have some the "[b]" attached to the end of the date, so let's remove that before we go on to hange our column types to more accurate types.
+
+```{r}
+vg_table$`Initial release date` <- gsub("\\[b\\]","",vg_table$`Initial release date`)
+```
+
+It seems like we could make our lives easier by adjusting the column names, so we'll do that now.
+```{r}
+colnames(vg_table) <- c("Title","Sales","Platform","ReleaseDate","Developer","Publisher")
+```
+
+We need to set the correct column types for each column in our currrent table so that we can compare them later and use them for our analysis, so let's make sure everything has the correct column type now!
+
+```{r}
+vg_table <- vg_table %>%
+  readr::type_convert(col_types = cols("Sales"=col_number(), "ReleaseDate" = col_datetime(format = "%B %d, %Y")))
+```
+
+Now that our table has been cleaned and prepared, we can begin our analysis!  First, Let's create a graph of the best-selling videogame sales over time.  We'll use a scatter plot to display our results.
+
+```{r}
+vg_table %>%
+  ggplot(mapping=aes(x=ReleaseDate,y=Sales)) + geom_point() + geom_smooth(method=lm)
+```
+
+Interestingly enough, there doesn't appear to be any correlation between the year that a best-selling videogame was released, and the amount of money it made in Sales!  In fact, there actually appears to be a very slight negative correlation!  Save for a few outliers, best-selling sales seem to fall around the same amount of Sales regardless of their Release Date! This directly contradicts what I would have believed, which is that as time went on, more sales would have been made!  If the year seemingly has no effect on the sales of whatever the best-selling title is, then there are other factors we can take into consideration in our analysis.  Let's try another charting and see if we can figure out a correlation between two variables in our dataset (there may not be one of significance, but we will of course check everything out).
+
+```{r}
+
+vg_table %>%
+  group_by(Developer) %>%
+  summarise(earnings=sum(Sales))%>%
+  ggplot(mapping = aes(x=Developer,y=earnings)) +geom_point() + theme(axis.text.x = element_text(angle = 90,hjust = 1,vjust=0.5))
+```
+
+Wow!  After creating our second scatter plot, we see that Nintndo EAD, short for Nintendo Entertainment Analysis & Development, is by far the publisher that has made the most earnings from the development of best-selling video games.  This comes as no surprise when you realize that Nintendo EAD is the listed developer for 11 of the 50 listed best-selling video games in our table.  But why is this?  What makes Nintendo able to produce so many other best selling video games?  TO figure this out, we can look at another dataset that will give us more information.
+
+To do this, we'll need to open up a CSV file containing over 7000 records of video game sales, scores, and more over the years.  We're no longer just looking at the best sellers!  We start by parsing the CSV file into a dataframe.
+
+```{r}
+vg_df <- read_csv("vgsales.csv")
+```
+
+Now that we're looking at the bigger picture, we can start to ask broader questions that we will eventually relate back to Nintendo.  For starters, what game rating will have the most sales?  I hypothesize that video games with an "E" for "Everyone" rating will have higher sales than video games with more mature ratings because they are more easily available for purchase by people of all ages.  To check this, we will need to use the group by function on the "Rating column" so that we can add all of the sales together for each individual rating.  We'll use a bar graph here to more eaily notice any distinctions between the ratings.
+
+```{r}
+vg_df %>%
+  group_by(Rating) %>%
+  summarise(total_sales=sum(Global_Sales)) %>%
+  ggplot(mapping = aes(x=Rating,y=total_sales,fill=Rating)) +
+  geom_bar(stat = "identity")
+```
+This graph confirms that, of all of the video games in which the rating has actually been supplied and is available, games that are rated "E" for "Everyone" actually sell the most copies!  Intertestingly enough, "M" and "T" rated games, the two that are targetted at more mature audiences, sell about the same amount of copies.  This is likely due to the fact that they are both targetted to similar more mature audiences!
+
+
+So, we've now determined that video games with an "E" rating have sold the most copies out of all the ratings in our recorded dataset!  To take this back to Nintendo, let's take a look at the distribution of ratings for videogames developed by Nintendo! To do this, we will first filter our dataframe for video games that were developed by Nintendo.  We will then plot the ratings of these video games again to see the distribution of Nintendo's video game ratings using ggplot!  Let's take a look.  A bar graph will again help to highlight the relationships between the ratings here.
+
+```{r}
+vg_df$rate_count <- as.numeric(1)
+vg_df %>%
+  filter(Developer == "Nintendo") %>%
+  group_by(Rating) %>%
+  summarise(numRating = sum(rate_count))%>%
+  ggplot(mapping = aes(x=Rating,y=numRating,fill=numRating)) +
+  geom_bar(stat="identity")
+```
+As we can clearly see here, Nintendo mostly produces "E" rated videogames!  
+
+Next, we'll take a look at how a videogame's critic scores can affect its sales.  How can we accomplish this, you ask?  Linear regression, of course!  We'll use the lm function to get a closer look at what effect the ciritic_score variable has on the sales, first.  We will create a null hypothesis that states that there is no relationship between the critic scored a videogame receives and the amounts of sales it brings in.
+
+```{r}
+exp_fit <- lm(Critic_Count~Global_Sales, data = vg_df)
+exp_fit %>%
+  broom::tidy()
+```
+The tidy function allows us to summarize the information we collect from the lm() function.  As you can see here, we have an estimate value of 3.171636, which means that, on average, for every 1 unit in the Critic_Score variable, the Global_sales value changes by 3.171636.  So, for every point a game receives from critics, it is estimated to sell an extra 3.171636 million copies!  The p value returned by tidy is also INCREDIBLY small, meaning that we will reject the null hypothesis of no relationship between critic scores and video game sales!
+
+Let's now look at the ratings that games developed by Nintendo have received over the years.  
+
+```{r}
+vg_df %>%
+  filter(Developer == "Nintendo") %>%
+  ggplot(mapping = aes(x=Name,y=Critic_Score,fill=Critic_Score)) +
+  geom_point() + theme(axis.text.x = element_text(angle = 90,hjust = 1,vjust=0.5))
+```
+
+While this graph helps us see that Nintendo video games tend to have fairly high critic ratings, it's a bit jumbled.  Let's simplify it a bit and compare the average score of Nintendo videogames to that of other videogame developers!  Again, here we will use the group_by and summarise functions to aggregate our data.
+
+```{r}
+vg_df %>%
+  group_by(Developer) %>%
+  summarise(avg_score = mean(Critic_Score),na.rm=TRUE) %>%
+  ggplot(mapping = aes(x=Developer,y=avg_score,color=ifelse(Developer=="Nintendo","black","red")),na.rm=TRUE) + geom_point()
+```
+Again, the graph is a bit clustered, so we'll make use of the color option provided to us with ggplot.  A simple ifelse check will allow us to easily highlight Nintendo's place in this plot!  As we can see, Nintendo ranks fairly highly amongst all of the other developers, appearing to rank at around the 75th percentile for critic scores. 
+
+While our linear regression from earlier showed us that it was incredibly likely for there to be a correlation between Critic Scores and Global Sales, Nintendo is not at the top of the list here by a long shot. So, what could this mean?  How exactly does Nitendo hold 11 of the 50 best-selling video game spots in the earlier data we examined?  Let's examine that:
+
+While we deduced that critic scores likely have a substantial effect on the amount of copies a video game will sell, we have yet to take into effect the effects of marketing!  If a video game is reviewed well, as the average video game developed by Nintendo is in the data we analyzed, the company can then use those positive review scores to sell more copies of the game.  While this may have been partially taken care of in the linear regression model we created, it is still important to note the possible influence of these factors.  
+
+We also noticed earlier that video games with "E" ratings have sold the most copies, and our data shows that Nintendo almost exclusively develops video games with "E" ratings.  Combine the above average review scores that Nintendo receives with the fact that they develop video games with the most commonly sold (from our data) ratings, and its no surprise that Nintendo was able to create the best-selling videogame of the year 11 times!  
+
+There are also several psychological factors that data science simply cannot take into account in models such as the ones above.  If Nintendo creates a best-selling video game one year, more and more individuals will become familiar with the company, potentially leading to those individuals becoming more likely to purchase Nintendo videogames in the future!  In other words, it is entirely possible that developing a best-selling videogame for a year INCREASES the chances of developing a best-selling video game in future years (could make for an interesting final project topic)!
+
+If Nintendo keeps up their current habits, I would nt be surprised to see more best-sellers in the future!  Thank you for joining me in analyzing this data and I hope you were able to take something away from it!  
